@@ -47,31 +47,35 @@
 #include <cassert>
 #include <iostream>
 #include <memory>
+#include <random>
 
 static const char *sSDKsample = "CUDA Bandwidth Test";
 
 // defines, project
 #define MEMCOPY_ITERATIONS 100
-#define DEFAULT_SIZE (32 * (1e6))      // 32 M
-#define DEFAULT_INCREMENT (4 * (1e6))  // 4 M
-#define CACHE_CLEAR_SIZE (16 * (1e6))  // 16 M
+#define DEFAULT_SIZE (32 * (1024*1024))      // 32 M
+#define DEFAULT_INCREMENT (4 * (1024*1024))  // 4 M
+#define CACHE_CLEAR_SIZE (16 * (1024*1024))  // 16 M
 
 // shmoo mode defines
-#define SHMOO_MEMSIZE_MAX (64 * (1e6))       // 64 M
-#define SHMOO_MEMSIZE_START (1e3)            // 1 KB
-#define SHMOO_INCREMENT_1KB (1e3)            // 1 KB
-#define SHMOO_INCREMENT_2KB (2 * 1e3)        // 2 KB
-#define SHMOO_INCREMENT_10KB (10 * (1e3))    // 10KB
-#define SHMOO_INCREMENT_100KB (100 * (1e3))  // 100 KB
-#define SHMOO_INCREMENT_1MB (1e6)            // 1 MB
-#define SHMOO_INCREMENT_2MB (2 * 1e6)        // 2 MB
-#define SHMOO_INCREMENT_4MB (4 * 1e6)        // 4 MB
-#define SHMOO_LIMIT_20KB (20 * (1e3))        // 20 KB
-#define SHMOO_LIMIT_50KB (50 * (1e3))        // 50 KB
-#define SHMOO_LIMIT_100KB (100 * (1e3))      // 100 KB
-#define SHMOO_LIMIT_1MB (1e6)                // 1 MB
-#define SHMOO_LIMIT_16MB (16 * 1e6)          // 16 MB
-#define SHMOO_LIMIT_32MB (32 * 1e6)          // 32 MB
+#define SHMOO_MEMSIZE_MAX (64 * 1024 * 1024)       // 64 M
+#define SHMOO_MEMSIZE_START (8*1024)            // 8 KB
+#define SHMOO_INCREMENT_1KB (1024)            // 1 KB
+#define SHMOO_INCREMENT_2KB (2 * 1024)        // 2 KB
+#define SHMOO_INCREMENT_10KB (10 * 1024)    // 10KB
+#define SHMOO_INCREMENT_100KB (100 * 1024)  // 100 KB
+#define SHMOO_INCREMENT_1MB (1024 * 1024)            // 1 MB
+#define SHMOO_INCREMENT_2MB (2 * 1024 * 1024)        // 2 MB
+#define SHMOO_INCREMENT_4MB (4 * 1024)        // 4 MB
+#define SHMOO_LIMIT_20KB (20 * 1024)        // 20 KB
+#define SHMOO_LIMIT_50KB (50 * 1024)        // 50 KB
+#define SHMOO_LIMIT_100KB (100 * 1024)      // 100 KB
+#define SHMOO_LIMIT_1MB (1024 * 1024)                // 1 MB
+#define SHMOO_LIMIT_16MB (16 * 1024 * 1024)          // 16 MB
+#define SHMOO_LIMIT_32MB (32 * 1024 * 1024)          // 32 MB
+
+#define ALLOC_MEM_SIZE (8 * 1024 * 1024 * 1024) // 8GB
+#define MEM_ALIGNMENT (1024); // 1KB
 
 // CPU cache flush
 #define FLUSH_SIZE (256 * 1024 * 1024)
@@ -486,14 +490,7 @@ void testBandwidthShmoo(memcpyKind kind, printMode printmode,
                         memoryMode memMode, int startDevice, int endDevice,
                         bool wc) {
   // count the number of copies to make
-  unsigned int count =
-      1 + (SHMOO_LIMIT_20KB / SHMOO_INCREMENT_1KB) +
-      ((SHMOO_LIMIT_50KB - SHMOO_LIMIT_20KB) / SHMOO_INCREMENT_2KB) +
-      ((SHMOO_LIMIT_100KB - SHMOO_LIMIT_50KB) / SHMOO_INCREMENT_10KB) +
-      ((SHMOO_LIMIT_1MB - SHMOO_LIMIT_100KB) / SHMOO_INCREMENT_100KB) +
-      ((SHMOO_LIMIT_16MB - SHMOO_LIMIT_1MB) / SHMOO_INCREMENT_1MB) +
-      ((SHMOO_LIMIT_32MB - SHMOO_LIMIT_16MB) / SHMOO_INCREMENT_2MB) +
-      ((SHMOO_MEMSIZE_MAX - SHMOO_LIMIT_32MB) / SHMOO_INCREMENT_4MB);
+  unsigned int count = 30;
 
   unsigned int *memSizes = (unsigned int *)malloc(count * sizeof(unsigned int));
   double *bandwidths = (double *)malloc(count * sizeof(double));
@@ -510,24 +507,10 @@ void testBandwidthShmoo(memcpyKind kind, printMode printmode,
     cudaSetDevice(currentDevice);
     // Run the shmoo
     int iteration = 0;
-    unsigned int memSize = 0;
+    unsigned int memSize = SHMOO_MEMSIZE_START;
 
-    while (memSize <= SHMOO_MEMSIZE_MAX) {
-      if (memSize < SHMOO_LIMIT_20KB) {
-        memSize += SHMOO_INCREMENT_1KB;
-      } else if (memSize < SHMOO_LIMIT_50KB) {
-        memSize += SHMOO_INCREMENT_2KB;
-      } else if (memSize < SHMOO_LIMIT_100KB) {
-        memSize += SHMOO_INCREMENT_10KB;
-      } else if (memSize < SHMOO_LIMIT_1MB) {
-        memSize += SHMOO_INCREMENT_100KB;
-      } else if (memSize < SHMOO_LIMIT_16MB) {
-        memSize += SHMOO_INCREMENT_1MB;
-      } else if (memSize < SHMOO_LIMIT_32MB) {
-        memSize += SHMOO_INCREMENT_2MB;
-      } else {
-        memSize += SHMOO_INCREMENT_4MB;
-      }
+    while (iteration < count) {
+      printf("memSize=%d\n", memSize);
 
       memSizes[iteration] = memSize;
 
@@ -548,6 +531,7 @@ void testBandwidthShmoo(memcpyKind kind, printMode printmode,
           break;
       }
 
+      memSize *= 2;
       iteration++;
       printf(".");
       fflush(0);
@@ -781,6 +765,26 @@ float testHostToDeviceTransfer(unsigned int memSize, memoryMode memMode,
   return bandwidthInGBs;
 }
 
+
+#define THREADS_PER_BLOCK 1024
+
+namespace CudaOp {
+// function to memcpy array on device
+__global__ void deviceMemcpy(double *dst, const double *src) {
+  unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+  // dst[i] = src[i];
+  __stcs(dst + i,  __ldcs(src + i));
+}
+
+void deviceMemcpyWrapper(double *dst, double *src, unsigned int numBytes) {
+  // Check numBytes is legal
+  assert(numBytes % THREADS_PER_BLOCK == 0);
+  deviceMemcpy<<<numBytes / THREADS_PER_BLOCK, THREADS_PER_BLOCK>>>(dst, src);
+}
+}  // namespace CudaOp
+
+
+
 ///////////////////////////////////////////////////////////////////////////////
 //! test the bandwidth of a device to device memcopy of a specific size
 ///////////////////////////////////////////////////////////////////////////////
@@ -795,7 +799,7 @@ float testDeviceToDeviceTransfer(unsigned int memSize) {
   checkCudaErrors(cudaEventCreate(&stop));
 
   // allocate host memory
-  unsigned char *h_idata = (unsigned char *)malloc(memSize);
+  unsigned char *h_idata = (unsigned char *)malloc(ALLOC_MEM_SIZE);
 
   if (h_idata == 0) {
     fprintf(stderr, "Not enough memory avaialable on host to run test!\n");
@@ -803,27 +807,39 @@ float testDeviceToDeviceTransfer(unsigned int memSize) {
   }
 
   // initialize the host memory
-  for (unsigned int i = 0; i < memSize / sizeof(unsigned char); i++) {
+  for (unsigned int i = 0; i < ALLOC_MEM_SIZE / sizeof(unsigned char); i++) {
     h_idata[i] = (unsigned char)(i & 0xff);
   }
 
   // allocate device memory
   unsigned char *d_idata;
-  checkCudaErrors(cudaMalloc((void **)&d_idata, memSize));
+  checkCudaErrors(cudaMalloc((void **)&d_idata, ALLOC_MEM_SIZE));
   unsigned char *d_odata;
-  checkCudaErrors(cudaMalloc((void **)&d_odata, memSize));
+  checkCudaErrors(cudaMalloc((void **)&d_odata, ALLOC_MEM_SIZE));
 
   // initialize memory
   checkCudaErrors(
-      cudaMemcpy(d_idata, h_idata, memSize, cudaMemcpyHostToDevice));
+      cudaMemcpy(d_idata, h_idata, ALLOC_MEM_SIZE, cudaMemcpyHostToDevice));
+
+  // initialize RNG
+  std::random_device rd;
+  std::mt19937 rng(rd());
+  
 
   // run the memcopy
   sdkStartTimer(&timer);
   checkCudaErrors(cudaEventRecord(start, 0));
 
   for (unsigned int i = 0; i < MEMCOPY_ITERATIONS; i++) {
+    std::uniform_int_distribution<unsigned int> offsetDist(0, ALLOC_MEM_SIZE - memSize - 1);
+    unsigned int randAlignedOffsetSrc = offsetDist(rng) / MEM_ALIGNMENT * MEM_ALIGNMENT;
+    unsigned int randAlignedOffsetDst = offsetDist(rng) / MEM_ALIGNMENT * MEM_ALIGNMENT;
+    printf("offsetSrc= %llu, offsetDst = %llu\n", randAlignedOffsetSrc, randAlignedOffsetDst);
+
     checkCudaErrors(
-        cudaMemcpy(d_odata, d_idata, memSize, cudaMemcpyDeviceToDevice));
+        cudaMemcpy(d_odata + randAlignedOffsetDst, d_idata + randAlignedOffsetSrc, memSize, cudaMemcpyDeviceToDevice));
+  	//CudaOp::deviceMemcpyWrapper((double *)d_odata, (double *)d_idata, memSize/sizeof(double));
+	  
   }
 
   checkCudaErrors(cudaEventRecord(stop, 0));
