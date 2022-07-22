@@ -58,6 +58,7 @@ static const char *sSDKsample = "CUDA Bandwidth Test";
 #define CACHE_CLEAR_SIZE (16 * (1024*1024))  // 16 M
 
 // shmoo mode defines
+#define SHMOO_COUNT (20)
 #define SHMOO_MEMSIZE_MAX (64 * 1024 * 1024)       // 64 M
 #define SHMOO_MEMSIZE_START (8*1024)            // 8 KB
 #define SHMOO_INCREMENT_1KB (1024)            // 1 KB
@@ -74,8 +75,8 @@ static const char *sSDKsample = "CUDA Bandwidth Test";
 #define SHMOO_LIMIT_16MB (16 * 1024 * 1024)          // 16 MB
 #define SHMOO_LIMIT_32MB (32 * 1024 * 1024)          // 32 MB
 
-#define ALLOC_MEM_SIZE (8 * 1024 * 1024 * 1024) // 8GB
-#define MEM_ALIGNMENT (1024); // 1KB
+#define ALLOC_MEM_SIZE (2 * 1024 * 1024 * 1024ULL) // 2GB
+#define MEM_ALIGNMENT (1024ULL) // 1KB
 
 // CPU cache flush
 #define FLUSH_SIZE (256 * 1024 * 1024)
@@ -489,8 +490,8 @@ void testBandwidthRange(unsigned int start, unsigned int end,
 void testBandwidthShmoo(memcpyKind kind, printMode printmode,
                         memoryMode memMode, int startDevice, int endDevice,
                         bool wc) {
-  // count the number of copies to make
-  unsigned int count = 30;
+
+  unsigned int count = SHMOO_COUNT;
 
   unsigned int *memSizes = (unsigned int *)malloc(count * sizeof(unsigned int));
   double *bandwidths = (double *)malloc(count * sizeof(double));
@@ -825,20 +826,19 @@ float testDeviceToDeviceTransfer(unsigned int memSize) {
   std::random_device rd;
   std::mt19937 rng(rd());
   
-
   // run the memcopy
   sdkStartTimer(&timer);
   checkCudaErrors(cudaEventRecord(start, 0));
 
   for (unsigned int i = 0; i < MEMCOPY_ITERATIONS; i++) {
-    std::uniform_int_distribution<unsigned int> offsetDist(0, ALLOC_MEM_SIZE - memSize - 1);
-    unsigned int randAlignedOffsetSrc = offsetDist(rng) / MEM_ALIGNMENT * MEM_ALIGNMENT;
-    unsigned int randAlignedOffsetDst = offsetDist(rng) / MEM_ALIGNMENT * MEM_ALIGNMENT;
-    printf("offsetSrc= %llu, offsetDst = %llu\n", randAlignedOffsetSrc, randAlignedOffsetDst);
+   std::uniform_int_distribution<size_t> offsetDist(0, ALLOC_MEM_SIZE - memSize - 1);
+   size_t randAlignedOffsetSrc = offsetDist(rng) / MEM_ALIGNMENT * MEM_ALIGNMENT;
+   size_t randAlignedOffsetDst = offsetDist(rng) / MEM_ALIGNMENT * MEM_ALIGNMENT;
+   //printf("offsetSrc= %lu, offsetDst = %lu\n", randAlignedOffsetSrc, randAlignedOffsetDst);
 
-    checkCudaErrors(
-        cudaMemcpy(d_odata + randAlignedOffsetDst, d_idata + randAlignedOffsetSrc, memSize, cudaMemcpyDeviceToDevice));
-  	//CudaOp::deviceMemcpyWrapper((double *)d_odata, (double *)d_idata, memSize/sizeof(double));
+   checkCudaErrors(
+       cudaMemcpy(d_odata + randAlignedOffsetDst, d_idata + randAlignedOffsetSrc, memSize, cudaMemcpyDeviceToDevice));
+  	//CudaOp::deviceMemcpyWrapper((double *)(d_odata + randAlignedOffsetDst), (double *)(d_idata + randAlignedOffsetSrc), memSize/sizeof(double));
 	  
   }
 
