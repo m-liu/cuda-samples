@@ -506,13 +506,38 @@ void testBandwidthShmoo(memcpyKind kind, printMode printmode,
   for (int currentDevice = startDevice; currentDevice <= endDevice;
        currentDevice++) {
     cudaSetDevice(currentDevice);
+
+    // allocate memory
+      // allocate host memory
+      unsigned char *h_idata = (unsigned char *)malloc(ALLOC_MEM_SIZE);
+
+      if (h_idata == 0) {
+        fprintf(stderr, "Not enough memory avaialable on host to run test!\n");
+        exit(EXIT_FAILURE);
+      }
+
+      // initialize the host memory
+      for (unsigned int i = 0; i < ALLOC_MEM_SIZE / sizeof(unsigned char); i++) {
+        h_idata[i] = (unsigned char)(i & 0xff);
+      }
+
+      // allocate device memory
+      unsigned char *d_idata;
+      checkCudaErrors(cudaMalloc((void **)&d_idata, ALLOC_MEM_SIZE));
+      unsigned char *d_odata;
+      checkCudaErrors(cudaMalloc((void **)&d_odata, ALLOC_MEM_SIZE));
+
+      // initialize memory
+      checkCudaErrors(
+          cudaMemcpy(d_idata, h_idata, ALLOC_MEM_SIZE, cudaMemcpyHostToDevice));
+
+
+
     // Run the shmoo
     int iteration = 0;
     unsigned int memSize = SHMOO_MEMSIZE_START;
 
-    while (iteration < count) {
-      printf("memSize=%d\n", memSize);
-
+    while (iteration < count && memSize <= ALLOC_MEM_SIZE) {
       memSizes[iteration] = memSize;
 
       switch (kind) {
@@ -528,7 +553,7 @@ void testBandwidthShmoo(memcpyKind kind, printMode printmode,
 
         case DEVICE_TO_DEVICE:
           bandwidths[iteration] +=
-              testDeviceToDeviceTransfer(memSizes[iteration]);
+              testDeviceToDeviceTransfer(memSizes[iteration], d_idata, d_odata);
           break;
       }
 
@@ -537,6 +562,14 @@ void testBandwidthShmoo(memcpyKind kind, printMode printmode,
       printf(".");
       fflush(0);
     }
+
+
+    // Clean up
+    free(h_idata);
+    checkCudaErrors(cudaFree(d_idata));
+    checkCudaErrors(cudaFree(d_odata));
+
+
   }  // Complete the bandwidth computation on all the devices
 
   // print results
@@ -789,7 +822,7 @@ void deviceMemcpyWrapper(double *dst, double *src, unsigned int numBytes) {
 ///////////////////////////////////////////////////////////////////////////////
 //! test the bandwidth of a device to device memcopy of a specific size
 ///////////////////////////////////////////////////////////////////////////////
-float testDeviceToDeviceTransfer(unsigned int memSize) {
+float testDeviceToDeviceTransfer(unsigned int memSize, unsigned char *d_idata, unsigned char *d_odata) {
   StopWatchInterface *timer = NULL;
   float elapsedTimeInMs = 0.0f;
   float bandwidthInGBs = 0.0f;
@@ -798,29 +831,6 @@ float testDeviceToDeviceTransfer(unsigned int memSize) {
   sdkCreateTimer(&timer);
   checkCudaErrors(cudaEventCreate(&start));
   checkCudaErrors(cudaEventCreate(&stop));
-
-  // allocate host memory
-  unsigned char *h_idata = (unsigned char *)malloc(ALLOC_MEM_SIZE);
-
-  if (h_idata == 0) {
-    fprintf(stderr, "Not enough memory avaialable on host to run test!\n");
-    exit(EXIT_FAILURE);
-  }
-
-  // initialize the host memory
-  for (unsigned int i = 0; i < ALLOC_MEM_SIZE / sizeof(unsigned char); i++) {
-    h_idata[i] = (unsigned char)(i & 0xff);
-  }
-
-  // allocate device memory
-  unsigned char *d_idata;
-  checkCudaErrors(cudaMalloc((void **)&d_idata, ALLOC_MEM_SIZE));
-  unsigned char *d_odata;
-  checkCudaErrors(cudaMalloc((void **)&d_odata, ALLOC_MEM_SIZE));
-
-  // initialize memory
-  checkCudaErrors(
-      cudaMemcpy(d_idata, h_idata, ALLOC_MEM_SIZE, cudaMemcpyHostToDevice));
 
   // initialize RNG
   std::random_device rd;
@@ -864,11 +874,8 @@ float testDeviceToDeviceTransfer(unsigned int memSize) {
 
   // clean up memory
   sdkDeleteTimer(&timer);
-  free(h_idata);
   checkCudaErrors(cudaEventDestroy(stop));
   checkCudaErrors(cudaEventDestroy(start));
-  checkCudaErrors(cudaFree(d_idata));
-  checkCudaErrors(cudaFree(d_odata));
 
   return bandwidthInGBs;
 }
